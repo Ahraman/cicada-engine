@@ -1,21 +1,18 @@
 use windows::{
     core::PCWSTR,
     Win32::{
-        Foundation::{
-            GetLastError, ERROR_CLASS_ALREADY_EXISTS, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM,
-        },
+        Foundation::{GetLastError, ERROR_CLASS_ALREADY_EXISTS, HINSTANCE, HWND},
         Graphics::Gdi::{GetStockObject, BLACK_BRUSH, HBRUSH},
         System::LibraryLoader::GetModuleHandleW,
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, LoadCursorW, LoadIconW,
-            RegisterClassExW, ShowWindow, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_ARROW,
-            IDI_APPLICATION, SW_SHOWDEFAULT, WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSEXW,
-            WS_OVERLAPPEDWINDOW,
+            CreateWindowExW, DestroyWindow, LoadCursorW, LoadIconW, RegisterClassExW, ShowWindow,
+            CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_ARROW, IDI_APPLICATION, SW_SHOWDEFAULT,
+            WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
         },
     },
 };
 
-use crate::{error::WindowError, util::WideStr};
+use crate::{error::WindowError, event::WindowResize, event_loop::EventLoop, util::WideStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Pos {
@@ -79,16 +76,29 @@ pub struct WindowPlatformSpecificAttribs {
     pub class_name: Option<String>,
 }
 
+pub(crate) struct CreateData<'a, T0>
+where
+    T0: WindowResize,
+{
+    pub(crate) event_loop: &'a mut EventLoop<T0>,
+}
+
 pub struct Window {
     hwnd: HWND,
 }
 
 impl Window {
-    pub fn new(
+    pub fn new<'a, T0>(
+        event_loop: &'a mut EventLoop<T0>,
         attribs: WindowAttribs,
         platform_specific: WindowPlatformSpecificAttribs,
-    ) -> Result<Self, WindowError> {
-        unsafe { Self::create_unchecked(attribs, platform_specific) }
+    ) -> Result<Self, WindowError>
+    where
+        T0: WindowResize,
+    {
+        let create_data = CreateData { event_loop };
+
+        unsafe { Self::create_unchecked(create_data, attribs, platform_specific) }
     }
 
     pub fn show(&mut self, show_style: ShowStyle) -> Result<(), WindowError> {
@@ -103,13 +113,19 @@ impl Drop for Window {
 }
 
 impl Window {
-    unsafe fn create_unchecked(
+    unsafe fn create_unchecked<T0>(
+        mut create_data: CreateData<T0>,
         attribs: WindowAttribs,
         platform_specific: WindowPlatformSpecificAttribs,
-    ) -> Result<Self, WindowError> {
+    ) -> Result<Self, WindowError>
+    where
+        T0: WindowResize,
+    {
         let hinstance = GetModuleHandleW(None)?.into();
-        let class_name =
-            Self::register_class_unchecked(hinstance, platform_specific.class_name.as_deref())?;
+        let class_name = Self::register_class_unchecked::<T0>(
+            hinstance,
+            platform_specific.class_name.as_deref(),
+        )?;
 
         struct CreateAttribs {
             x: i32,
@@ -154,16 +170,19 @@ impl Window {
             None,
             None,
             hinstance,
-            None,
+            Some(&mut create_data as *mut _ as *mut _),
         )?;
 
         Ok(Self { hwnd })
     }
 
-    unsafe fn register_class_unchecked(
+    unsafe fn register_class_unchecked<T0>(
         hinstance: HINSTANCE,
         class_name: Option<&str>,
-    ) -> Result<WideStr, WindowError> {
+    ) -> Result<WideStr, WindowError>
+    where
+        T0: WindowResize,
+    {
         let class_style = CS_VREDRAW | CS_HREDRAW;
 
         let class_name = WideStr::new(class_name.unwrap_or("main_window"));
@@ -171,7 +190,7 @@ impl Window {
         let window_class = WNDCLASSEXW {
             cbSize: size_of::<WNDCLASSEXW>() as u32,
             style: class_style,
-            lpfnWndProc: Some(common_window_callback),
+            lpfnWndProc: Some(EventLoop::<T0>::common_window_callback),
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: hinstance,
@@ -204,13 +223,4 @@ impl Window {
     unsafe fn destroy_unchecked(hwnd: HWND) {
         let _ = DestroyWindow(hwnd);
     }
-}
-
-pub(crate) unsafe extern "system" fn common_window_callback(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    DefWindowProcW(hwnd, msg, wparam, lparam)
 }
