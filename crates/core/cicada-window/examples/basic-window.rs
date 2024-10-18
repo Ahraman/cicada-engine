@@ -5,7 +5,7 @@ use cicada_window::{
 };
 
 fn main() -> Result<(), WindowError> {
-    let mut event_loop = EventLoop::new()?.with_resize_callback(|| println!("Hello"));
+    let mut event_loop = EventLoop::new()?.with_resize_callback(|size| println!("{size:?}"));
 
     let window_attribs = WindowAttribs::default();
     let platform_specific = WindowPlatformSpecificAttribs::default();

@@ -12,7 +12,12 @@ use windows::{
     },
 };
 
-use crate::{error::WindowError, event::WindowResize, event_loop::EventLoop, util::WideStr};
+use crate::{
+    error::WindowError,
+    event::{WindowMove, WindowResize},
+    event_loop::EventLoop,
+    util::WideStr,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Pos {
@@ -76,11 +81,12 @@ pub struct WindowPlatformSpecificAttribs {
     pub class_name: Option<String>,
 }
 
-pub(crate) struct CreateData<'a, T0>
+pub(crate) struct CreateData<'a, T0, T1>
 where
     T0: WindowResize,
+    T1: WindowMove,
 {
-    pub(crate) event_loop: &'a mut EventLoop<T0>,
+    pub(crate) event_loop: &'a mut EventLoop<T0, T1>,
 }
 
 pub struct Window {
@@ -113,13 +119,14 @@ impl Drop for Window {
 }
 
 impl Window {
-    unsafe fn create_unchecked<T0>(
-        mut create_data: CreateData<T0>,
+    unsafe fn create_unchecked<T0, T1>(
+        mut create_data: CreateData<T0, T1>,
         attribs: WindowAttribs,
         platform_specific: WindowPlatformSpecificAttribs,
     ) -> Result<Self, WindowError>
     where
         T0: WindowResize,
+        T1: WindowMove,
     {
         let hinstance = GetModuleHandleW(None)?.into();
         let class_name = Self::register_class_unchecked::<T0>(
