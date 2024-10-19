@@ -1,19 +1,17 @@
 use cicada_window::{
-    error::WindowError,
+    error::Error,
     event_loop::EventLoop,
-    window::{ShowStyle, Window, WindowAttribs, WindowPlatformSpecificAttribs},
+    window::{ShowStyle, Window},
 };
 
-fn main() -> Result<(), WindowError> {
-    let mut event_loop = EventLoop::new()?.with_resize_callback(|size| println!("{size:?}"));
+fn main() -> Result<(), Error> {
+    let mut event_loop = EventLoop::builder()
+        .with_resize_callback(|size| println!("{size:?}"))
+        .build()?;
 
-    let window_attribs = WindowAttribs::default();
-    let platform_specific = WindowPlatformSpecificAttribs::default();
-
-    let mut window = Window::new(&mut event_loop, window_attribs, platform_specific).unwrap();
-    _ = window.show(ShowStyle::Default);
-
-    let mut event_loop = event_loop.with_move_callback(|pos| println!("{pos:?}"));
+    let mut window = Window::builder().build(&event_loop)?;
+    window.show(ShowStyle::Default);
+    event_loop.set_move_callback(|pos| println!("{pos:?}"));
 
     loop {
         event_loop.poll_events();
