@@ -3,7 +3,6 @@ use windows::{
     Win32::{
         Foundation::{GetLastError, ERROR_CLASS_ALREADY_EXISTS, HINSTANCE, HWND},
         Graphics::Gdi::{GetStockObject, BLACK_BRUSH, HBRUSH},
-        System::LibraryLoader::GetModuleHandleW,
         UI::WindowsAndMessaging::{
             CreateWindowExW, DestroyWindow, LoadCursorW, LoadIconW, RegisterClassExW, ShowWindow,
             CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_ARROW, IDI_APPLICATION, SW_SHOWDEFAULT,
@@ -14,8 +13,7 @@ use windows::{
 
 use crate::{
     error::WindowError,
-    event::{WindowMove, WindowResize},
-    event_loop::EventLoop,
+    event_loop::{common_window_callback, EventLoop},
     util::WideStr,
 };
 
@@ -81,12 +79,8 @@ pub struct WindowPlatformSpecificAttribs {
     pub class_name: Option<String>,
 }
 
-pub(crate) struct CreateData<'a, T0, T1>
-where
-    T0: WindowResize,
-    T1: WindowMove,
-{
-    pub(crate) event_loop: &'a mut EventLoop<T0, T1>,
+pub(crate) struct CreateData<'a> {
+    pub(crate) event_loop: &'a mut EventLoop,
 }
 
 pub struct Window {
@@ -94,16 +88,12 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new<'a, T0>(
-        event_loop: &'a mut EventLoop<T0>,
+    pub fn new(
+        event_loop: &mut EventLoop,
         attribs: WindowAttribs,
         platform_specific: WindowPlatformSpecificAttribs,
-    ) -> Result<Self, WindowError>
-    where
-        T0: WindowResize,
-    {
+    ) -> Result<Self, WindowError> {
         let create_data = CreateData { event_loop };
-
         unsafe { Self::create_unchecked(create_data, attribs, platform_specific) }
     }
 
@@ -119,20 +109,14 @@ impl Drop for Window {
 }
 
 impl Window {
-    unsafe fn create_unchecked<T0, T1>(
-        mut create_data: CreateData<T0, T1>,
+    unsafe fn create_unchecked(
+        mut create_data: CreateData,
         attribs: WindowAttribs,
         platform_specific: WindowPlatformSpecificAttribs,
-    ) -> Result<Self, WindowError>
-    where
-        T0: WindowResize,
-        T1: WindowMove,
-    {
-        let hinstance = GetModuleHandleW(None)?.into();
-        let class_name = Self::register_class_unchecked::<T0>(
-            hinstance,
-            platform_specific.class_name.as_deref(),
-        )?;
+    ) -> Result<Self, WindowError> {
+        let hinstance = create_data.event_loop.hinstance;
+        let class_name =
+            Self::register_class_unchecked(hinstance, platform_specific.class_name.as_deref())?;
 
         struct CreateAttribs {
             x: i32,
@@ -183,13 +167,10 @@ impl Window {
         Ok(Self { hwnd })
     }
 
-    unsafe fn register_class_unchecked<T0>(
+    unsafe fn register_class_unchecked(
         hinstance: HINSTANCE,
         class_name: Option<&str>,
-    ) -> Result<WideStr, WindowError>
-    where
-        T0: WindowResize,
-    {
+    ) -> Result<WideStr, WindowError> {
         let class_style = CS_VREDRAW | CS_HREDRAW;
 
         let class_name = WideStr::new(class_name.unwrap_or("main_window"));
@@ -197,7 +178,7 @@ impl Window {
         let window_class = WNDCLASSEXW {
             cbSize: size_of::<WNDCLASSEXW>() as u32,
             style: class_style,
-            lpfnWndProc: Some(EventLoop::<T0>::common_window_callback),
+            lpfnWndProc: Some(common_window_callback),
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: hinstance,

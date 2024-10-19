@@ -13,6 +13,8 @@ fn main() -> Result<(), WindowError> {
     let mut window = Window::new(&mut event_loop, window_attribs, platform_specific).unwrap();
     _ = window.show(ShowStyle::Default);
 
+    let mut event_loop = event_loop.with_move_callback(|pos| println!("{pos:?}"));
+
     loop {
         event_loop.poll_events();
     }
