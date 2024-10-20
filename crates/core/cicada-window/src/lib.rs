@@ -1,5 +1,6 @@
-pub mod backend;
 pub mod error;
 pub mod event;
-pub mod event_loop;
+pub mod util;
 pub mod window;
+
+pub mod backend;

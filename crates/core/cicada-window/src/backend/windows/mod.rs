@@ -1,5 +1,5 @@
-pub mod event_loop;
+pub mod error;
+pub mod event;
 pub mod window;
 
-pub(crate) mod error;
-pub(crate) mod util;
+pub(self) mod util;

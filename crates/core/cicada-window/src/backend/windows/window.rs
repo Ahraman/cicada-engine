@@ -4,77 +4,30 @@ use windows::{
         Foundation::{GetLastError, ERROR_CLASS_ALREADY_EXISTS, HINSTANCE, HWND},
         Graphics::Gdi::{GetStockObject, BLACK_BRUSH, HBRUSH},
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DestroyWindow, LoadCursorW, LoadIconW, RegisterClassExW, ShowWindow,
-            CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_ARROW, IDI_APPLICATION, SW_SHOWDEFAULT,
-            WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+            CreateWindowExW, LoadCursorW, LoadIconW, RegisterClassExW, CS_HREDRAW, CS_VREDRAW,
+            CW_USEDEFAULT, IDC_ARROW, IDI_APPLICATION, WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSEXW,
+            WS_OVERLAPPEDWINDOW,
         },
     },
 };
 
-use crate::{
-    backend::windows::util::WideStr,
-    event_loop::EventLoop as RootEventLoop,
-    window::{DisplayStyle, ShowStyle, WindowAttribs, WindowBuilder},
-};
+use crate::window::{Attribs, Builder, DisplayStyle};
 
-use super::{
-    error::BackendError,
-    event_loop::{common_window_callback, EventLoop},
-};
-
-#[derive(Debug, Clone, Default)]
-pub struct WindowPlatformSpecificAttribs {
-    pub class_name: Option<String>,
-}
-
-pub trait WindowBuilderPlatformSpecificExt {
-    fn with_class_name(self, class_name: String) -> Self;
-}
-
-impl WindowBuilderPlatformSpecificExt for WindowBuilder {
-    fn with_class_name(mut self, class_name: String) -> Self {
-        self.platform_specific.class_name = Some(class_name);
-        self
-    }
-}
-
-pub(crate) struct CreateData<'a> {
-    pub(crate) event_loop: &'a EventLoop,
-}
+use super::{error::Error, event::EventLoop, util::WideStr};
 
 pub(crate) struct Window {
     pub(super) hwnd: HWND,
 }
 
 impl Window {
-    pub fn new(
-        event_loop: &RootEventLoop,
-        attribs: &WindowAttribs,
-        platform_specific: &WindowPlatformSpecificAttribs,
-    ) -> Result<Self, BackendError> {
-        unsafe { Self::create_unchecked(&event_loop.inner, attribs, platform_specific) }
-    }
-
-    pub fn show(&mut self, show_style: ShowStyle) {
-        unsafe { Self::show_unchecked(self.hwnd, show_style) }
-    }
-}
-
-impl Drop for Window {
-    fn drop(&mut self) {
-        unsafe { Self::destroy_unchecked(self.hwnd) }
-    }
-}
-
-impl Window {
     unsafe fn create_unchecked(
         event_loop: &EventLoop,
-        attribs: &WindowAttribs,
-        platform_specific: &WindowPlatformSpecificAttribs,
-    ) -> Result<Self, BackendError> {
+        attribs: &Attribs,
+        backend_attribs: &BackendAttribs,
+    ) -> Result<Self, Error> {
         let hinstance = event_loop.hinstance;
         let class_name =
-            Self::register_class_unchecked(hinstance, platform_specific.class_name.as_deref())?;
+            Self::register_class_unchecked(hinstance, backend_attribs.class_name.as_deref())?;
 
         struct CreateAttribs {
             x: i32,
@@ -107,7 +60,7 @@ impl Window {
 
         let window_title = WideStr::new(attribs.title.as_deref().unwrap_or("Window"));
 
-        let mut create_data = CreateData { event_loop };
+        //let mut create_data = CreateData { event_loop };
 
         let hwnd = CreateWindowExW(
             create_attribs.style_ex,
@@ -121,12 +74,12 @@ impl Window {
             None,
             None,
             hinstance,
-            Some(&mut create_data as *mut _ as *mut _),
+            None, //Some(&mut create_data as *mut _ as *mut _),
         )?;
 
         let mut window = Self { hwnd };
         match attribs.show_style {
-            Some(show_style) => window.show(show_style),
+            Some(show_style) => {} //window.show(show_style),
             None => {}
         };
 
@@ -136,7 +89,7 @@ impl Window {
     unsafe fn register_class_unchecked(
         hinstance: HINSTANCE,
         class_name: Option<&str>,
-    ) -> Result<WideStr, BackendError> {
+    ) -> Result<WideStr, Error> {
         let class_style = CS_VREDRAW | CS_HREDRAW;
 
         let class_name = WideStr::new(class_name.unwrap_or("main_window"));
@@ -144,7 +97,7 @@ impl Window {
         let window_class = WNDCLASSEXW {
             cbSize: size_of::<WNDCLASSEXW>() as u32,
             style: class_style,
-            lpfnWndProc: Some(common_window_callback),
+            lpfnWndProc: None, //Some(common_window_callback),
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: hinstance,
@@ -165,16 +118,20 @@ impl Window {
 
         Ok(class_name)
     }
+}
 
-    unsafe fn show_unchecked(hwnd: HWND, show_style: ShowStyle) {
-        let show_mode = match show_style {
-            ShowStyle::Default => SW_SHOWDEFAULT,
-        };
+#[derive(Debug, Clone, Default)]
+pub struct BackendAttribs {
+    pub class_name: Option<String>,
+}
 
-        let _ = ShowWindow(hwnd, show_mode);
-    }
+pub trait BackendBuilderExt {
+    fn with_class_name(self, class_name: String) -> Self;
+}
 
-    unsafe fn destroy_unchecked(hwnd: HWND) {
-        let _ = DestroyWindow(hwnd);
+impl BackendBuilderExt for Builder {
+    fn with_class_name(mut self, class_name: String) -> Self {
+        self.backend_attribs.class_name = Some(class_name);
+        self
     }
 }
