@@ -1,15 +1,13 @@
-use std::{io::Read, path::PathBuf};
+use std::path::PathBuf;
 
-use cicada_vkgen::{error::Error, loader::load_xml_registry, Settings};
+use gen_vulkan::{error::Error, load::load_xml_registry, parse::parse_vk_xml, Settings};
 
 fn main() -> Result<(), Error> {
     let settings = read_command_line()?;
-    let mut reader = load_xml_registry(&settings)?;
+    let reader = load_xml_registry(&settings)?;
+    let registry = parse_vk_xml(reader)?;
 
-    let mut buf = [0u8; 128];
-    reader.read_exact(&mut buf)?;
-
-    println!("{}", String::from_utf8(buf.to_vec()).unwrap());
+    println!("{registry:?}");
 
     Ok(())
 }
