@@ -139,9 +139,9 @@ impl Window {
         };
 
         if unsafe { RegisterClassExW(&window_class) } == 0 {
-            let e = unsafe { GetLastError() };
-            if e != ERROR_CLASS_ALREADY_EXISTS {
-                e.ok()?;
+            let error = unsafe { GetLastError() };
+            if error != ERROR_CLASS_ALREADY_EXISTS {
+                error.ok()?;
             }
         }
 
