@@ -1,5 +1,5 @@
 [package]
-name = "cicada-vkgen"
+name = "gen-vulkan"
 version = "0.1.0"
 authors = ["Ahraman <ahraman.programming@gmail.com>"]
 description = """Generate Vulkan bindings for Rust."""
@@ -7,6 +7,6 @@ edition = "2021"
 rust-version = "1.81.0"
 
 [dependencies]
-quick-xml = "0.36.2"
+xml = "0.8.20"
 
 ureq = { version = "2.10.1", default-features = false, features = ["tls"] }
