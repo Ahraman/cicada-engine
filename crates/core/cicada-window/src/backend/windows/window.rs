@@ -1,46 +1,83 @@
 use windows::{
     core::PCWSTR,
     Win32::{
-        Foundation::{GetLastError, ERROR_CLASS_ALREADY_EXISTS, HINSTANCE, HWND},
+        Foundation::{GetLastError, ERROR_CLASS_ALREADY_EXISTS, HWND},
         Graphics::Gdi::{GetStockObject, BLACK_BRUSH, HBRUSH},
         UI::WindowsAndMessaging::{
-            CreateWindowExW, LoadCursorW, LoadIconW, RegisterClassExW, CS_HREDRAW, CS_VREDRAW,
-            CW_USEDEFAULT, IDC_ARROW, IDI_APPLICATION, WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSEXW,
-            WS_OVERLAPPEDWINDOW,
+            CreateWindowExW, DestroyWindow, LoadCursorW, LoadIconW, RegisterClassExW, ShowWindow,
+            CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_ARROW, IDI_APPLICATION, SW_HIDE, SW_SHOW,
+            SW_SHOWDEFAULT, WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
         },
     },
 };
 
-use crate::window::{Attribs, Builder, DisplayStyle};
+use crate::{
+    backend::{
+        self,
+        inner::{CreateData, WideStr},
+    },
+    event::EventLoop,
+    window::{Builder, DisplayStyle, ShowStyle, WindowAttribs},
+};
 
-use super::{error::Error, event::EventLoop, util::WideStr};
+use super::{generic_window_callback, Error};
 
 pub(crate) struct Window {
     pub(super) hwnd: HWND,
 }
 
 impl Window {
-    unsafe fn create_unchecked(
+    pub(crate) fn new(
         event_loop: &EventLoop,
-        attribs: &Attribs,
-        backend_attribs: &BackendAttribs,
+        attribs: &WindowAttribs,
+        backend_attribs: &BackendWindowAttribs,
     ) -> Result<Self, Error> {
-        let hinstance = event_loop.hinstance;
-        let class_name =
-            Self::register_class_unchecked(hinstance, backend_attribs.class_name.as_deref())?;
+        Self::create_unchecked(&event_loop.backend, attribs, backend_attribs)
+    }
 
-        struct CreateAttribs {
+    pub(crate) fn show(&mut self, show_style: ShowStyle) {
+        Self::show_unchecked(self.hwnd, show_style)
+    }
+    
+    pub(crate) fn monitor(&self) -> backend::Monitor {
+        backend::Monitor::from_window(self)
+    }
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        Self::destroy_unchecked(self.hwnd);
+        self.hwnd = Default::default();
+    }
+}
+
+impl Window {
+    fn create_unchecked(
+        event_loop: &backend::EventLoop,
+        attribs: &WindowAttribs,
+        backend_attribs: &BackendWindowAttribs,
+    ) -> Result<Self, Error> {
+        let class_name = Self::register_class_unchecked(
+            &event_loop,
+            backend_attribs
+                .class_name
+                .as_deref()
+                .unwrap_or("window_class"),
+        )?;
+
+        let title = WideStr::from_os_str(attribs.title.as_deref().unwrap_or("Window"));
+
+        struct Create {
             x: i32,
             y: i32,
             width: i32,
             height: i32,
-
             style: WINDOW_STYLE,
             style_ex: WINDOW_EX_STYLE,
         }
 
-        let create_attribs = match attribs.display_style {
-            Some(DisplayStyle::Windowed(pos, size)) => CreateAttribs {
+        let create_info = match attribs.display_style {
+            DisplayStyle::Windowed(pos, size) => Create {
                 x: pos.x,
                 y: pos.y,
                 width: size.width as i32,
@@ -48,7 +85,7 @@ impl Window {
                 style: WS_OVERLAPPEDWINDOW,
                 style_ex: Default::default(),
             },
-            None => CreateAttribs {
+            DisplayStyle::Default => Create {
                 x: CW_USEDEFAULT,
                 y: CW_USEDEFAULT,
                 width: CW_USEDEFAULT,
@@ -58,78 +95,84 @@ impl Window {
             },
         };
 
-        let window_title = WideStr::new(attribs.title.as_deref().unwrap_or("Window"));
+        let mut create_data = CreateData::new();
+        let hwnd = unsafe {
+            CreateWindowExW(
+                create_info.style_ex,
+                class_name.as_pcswtr(),
+                title.as_pcswtr(),
+                create_info.style,
+                create_info.x,
+                create_info.y,
+                create_info.width,
+                create_info.height,
+                None,
+                None,
+                event_loop.hinstance,
+                Some(&mut create_data as *mut _ as *mut _),
+            )
+        }?;
 
-        //let mut create_data = CreateData { event_loop };
-
-        let hwnd = CreateWindowExW(
-            create_attribs.style_ex,
-            class_name.as_pcwstr(),
-            window_title.as_pcwstr(),
-            create_attribs.style,
-            create_attribs.x,
-            create_attribs.y,
-            create_attribs.width,
-            create_attribs.height,
-            None,
-            None,
-            hinstance,
-            None, //Some(&mut create_data as *mut _ as *mut _),
-        )?;
-
-        let mut window = Self { hwnd };
-        match attribs.show_style {
-            Some(show_style) => {} //window.show(show_style),
-            None => {}
-        };
-
-        Ok(window)
+        Ok(Self { hwnd })
     }
 
-    unsafe fn register_class_unchecked(
-        hinstance: HINSTANCE,
-        class_name: Option<&str>,
+    fn register_class_unchecked(
+        event_loop: &backend::EventLoop,
+        class_name: &str,
     ) -> Result<WideStr, Error> {
-        let class_style = CS_VREDRAW | CS_HREDRAW;
-
-        let class_name = WideStr::new(class_name.unwrap_or("main_window"));
+        let class_name = WideStr::from_os_str(class_name);
+        let style = CS_VREDRAW | CS_HREDRAW;
 
         let window_class = WNDCLASSEXW {
             cbSize: size_of::<WNDCLASSEXW>() as u32,
-            style: class_style,
-            lpfnWndProc: None, //Some(common_window_callback),
+            style: style,
+            lpfnWndProc: Some(generic_window_callback),
             cbClsExtra: 0,
             cbWndExtra: 0,
-            hInstance: hinstance,
-            hIcon: LoadIconW(None, IDI_APPLICATION)?,
-            hCursor: LoadCursorW(None, IDC_ARROW)?,
-            hbrBackground: HBRUSH(GetStockObject(BLACK_BRUSH).0),
+            hInstance: event_loop.hinstance,
+            hIcon: unsafe { LoadIconW(None, IDI_APPLICATION) }?,
+            hCursor: unsafe { LoadCursorW(None, IDC_ARROW) }?,
+            hbrBackground: HBRUSH(unsafe { GetStockObject(BLACK_BRUSH) }.0),
             lpszMenuName: PCWSTR::null(),
-            lpszClassName: class_name.as_pcwstr(),
-            hIconSm: LoadIconW(None, IDI_APPLICATION)?,
+            lpszClassName: class_name.as_pcswtr(),
+            hIconSm: unsafe { LoadIconW(None, IDI_APPLICATION) }?,
         };
 
-        if RegisterClassExW(&window_class) == 0 {
-            let err = GetLastError();
-            if err != ERROR_CLASS_ALREADY_EXISTS {
-                err.ok()?;
+        if unsafe { RegisterClassExW(&window_class) } == 0 {
+            let e = unsafe { GetLastError() };
+            if e != ERROR_CLASS_ALREADY_EXISTS {
+                e.ok()?;
             }
         }
 
         Ok(class_name)
     }
+
+    fn show_unchecked(hwnd: HWND, show_style: ShowStyle) {
+        let show_cmd = match show_style {
+            ShowStyle::Default => SW_SHOWDEFAULT,
+            ShowStyle::Visible => SW_SHOW,
+            ShowStyle::Hidden => SW_HIDE,
+        };
+
+        _ = unsafe { ShowWindow(hwnd, show_cmd) };
+    }
+
+    fn destroy_unchecked(hwnd: HWND) {
+        _ = unsafe { DestroyWindow(hwnd) };
+    }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct BackendAttribs {
-    pub class_name: Option<String>,
+#[derive(Debug, Default)]
+pub(crate) struct BackendWindowAttribs {
+    pub(crate) class_name: Option<String>,
 }
 
-pub trait BackendBuilderExt {
+pub trait WindowBuilderWindowsExt {
     fn with_class_name(self, class_name: String) -> Self;
 }
 
-impl BackendBuilderExt for Builder {
+impl WindowBuilderWindowsExt for Builder {
     fn with_class_name(mut self, class_name: String) -> Self {
         self.backend_attribs.class_name = Some(class_name);
         self

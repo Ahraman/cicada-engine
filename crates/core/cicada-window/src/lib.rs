@@ -1,6 +1,8 @@
 pub mod error;
 pub mod event;
-pub mod util;
+pub mod monitor;
+pub mod platform;
 pub mod window;
+pub mod util;
 
-pub mod backend;
+pub(crate) mod backend;

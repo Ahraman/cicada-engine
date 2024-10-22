@@ -1,5 +1,5 @@
-#[derive(Debug, Clone)]
-pub struct Error(pub windows::core::Error);
+#[derive(Debug)]
+pub(crate) struct Error(windows::core::Error);
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

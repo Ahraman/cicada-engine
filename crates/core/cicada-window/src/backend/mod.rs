@@ -1,5 +1,6 @@
 #[cfg(target_os = "windows")]
-mod windows;
+#[path ="windows/mod.rs"]
+mod inner;
 
 #[cfg(target_os = "windows")]
-pub use windows::*;
+pub use inner::*;

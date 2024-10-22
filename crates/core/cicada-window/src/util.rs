@@ -21,3 +21,14 @@ impl Size {
         Self { width, height }
     }
 }
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Rect {
+    pub start: Pos,
+    pub extent: Size,
+}
+impl Rect {
+    pub(crate) fn new(start: Pos, extent: Size) -> Self {
+        Self { start, extent }
+    }
+}
