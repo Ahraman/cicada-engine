@@ -1,5 +1,7 @@
 #[derive(Debug)]
 pub enum Error {
+    BadArg(String, String),
+
     Io(std::io::Error),
 
     Ureq(ureq::Error),
@@ -8,7 +10,10 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Error::BadArg(arg, value) => write!(f, "bad value '{value}' for argument '{arg}'"),
+
             Error::Io(error) => error.fmt(f),
+
             Error::Ureq(error) => error.fmt(f),
         }
     }
