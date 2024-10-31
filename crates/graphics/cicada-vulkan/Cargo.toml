@@ -1,0 +1,18 @@
+[package]
+name = "cicada-vulkan"
+version = "0.1.0"
+authors = ["Ahraman <ahraman.programming@gmail.com>"]
+description = """The Vulkan API binding used by CICADA."""
+edition = "2021"
+rust-version = "1.82.0"
+
+[features]
+default = ["vk13", "khr_extensions"]
+
+vk10 = []
+vk11 = ["vk10"]
+vk12 = ["vk11"]
+vk13 = ["vk12"]
+
+khr_extensions = ["VK_KHR_portability_enumeration"]
+VK_KHR_portability_enumeration = ["vk10"]
