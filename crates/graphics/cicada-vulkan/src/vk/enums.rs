@@ -1,4 +1,3 @@
-
 #[cfg(feature = "vk10")]
 pub struct StructureType(pub u32);
 
