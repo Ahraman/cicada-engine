@@ -1,5 +1,7 @@
 [package]
-name="cicada-core"
+name = "cicada-core"
 version = "0.1.0"
 authors = ["Ahraman <ahraman.programming@gmail.com>"]
 description = """The core crate of CICADA, responsible for bootstrapping the engine."""
+edition = "2021"
+rust-version = "1.82.0"
