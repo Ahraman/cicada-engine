@@ -1,1 +1,7 @@
 /target
+
+# editor files
+/.vscode
+
+# temporary files
+/temp
