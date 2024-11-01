@@ -8,7 +8,7 @@ use crate::{error::Error, Settings};
 pub fn load_file(file: &str, settings: &Settings) -> Result<impl Read, Error> {
     let file = File::open(format!(
         "{}/{file}",
-        settings.path.as_deref().unwrap_or("temp/vulkan")
+        settings.path.as_deref().unwrap_or("temp/registry/vulkan")
     ))?;
 
     Ok(BufReader::new(file))

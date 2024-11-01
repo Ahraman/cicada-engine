@@ -1,11 +1,11 @@
 use gen_vulkan::{
     error::{CmdError, Error},
-    init, Settings,
+    Settings,
 };
 
 fn main() -> Result<(), Error> {
     let settings = process_cmd_line()?;
-    init(&settings)?;
+    gen_vulkan::run(&settings)?;
 
     Ok(())
 }

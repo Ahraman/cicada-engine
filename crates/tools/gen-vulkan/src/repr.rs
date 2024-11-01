@@ -1,26 +1,63 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, num::NonZeroUsize};
 
 #[derive(Default)]
 pub struct Vulkan {
-    pub metadata: Metadata,
     pub types: Types,
+    pub enums: Enums,
+    pub commands: Commands,
     pub features: Features,
 }
 
-#[derive(Default)]
-pub struct Metadata {
-    pub has_structs: bool,
-    pub has_enum_types: bool,
-    pub has_commands: bool,
+impl Vulkan {
+    pub fn has_result(&self) -> bool {
+        self.types.result_type.is_some()
+    }
+
+    pub fn has_enums(&self) -> bool {
+        !self.types.enum_types.is_empty()
+    }
+
+    pub fn has_structs(&self) -> bool {
+        !self.types.struct_types.is_empty()
+    }
+
+    pub fn has_unions(&self) -> bool {
+        !self.types.union_types.is_empty()
+    }
+
+    pub fn has_commands(&self) -> bool {
+        !self.commands.items.is_empty()
+    }
 }
 
 #[derive(Default)]
 pub struct Types {
     pub items: HashMap<TypeHandle, Type>,
+
+    pub result_type: Option<TypeHandle>,
+    pub struct_types: Vec<TypeHandle>,
+    pub union_types: Vec<TypeHandle>,
+    pub enum_types: Vec<TypeHandle>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TypeHandle(pub usize);
+impl Types {
+    pub fn get(&self, handle: TypeHandle) -> Option<&Type> {
+        self.items.get(&handle)
+    }
+
+    pub fn insert(&mut self, ty: Type) -> TypeHandle {
+        let handle = self.next_handle();
+        self.items.insert(handle, ty);
+        handle
+    }
+
+    pub fn next_handle(&self) -> TypeHandle {
+        TypeHandle(NonZeroUsize::MIN.saturating_add(self.items.len()))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TypeHandle(pub NonZeroUsize);
 
 pub struct DecorType {
     pub handle: TypeHandle,
@@ -41,7 +78,7 @@ pub struct Type {
 pub struct TypeInfo {
     pub standard_name: String,
     pub output_name: String,
-    pub feature_set: FeatureHandle,
+    pub feature_set: Option<FeatureHandle>,
 }
 
 pub enum TypeKind {
@@ -74,7 +111,25 @@ pub struct StructMember {
     pub decor_type: DecorType,
 }
 
-pub struct CommandHandle(pub usize);
+#[derive(Default)]
+pub struct Enums {
+    pub items: Vec<Enum>,
+}
+
+#[derive(Default)]
+pub struct Enum {
+    pub values: Vec<EnumValue>,
+}
+
+pub struct EnumValue {}
+
+#[derive(Default)]
+pub struct Commands {
+    pub items: HashMap<CommandHandle, Command>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CommandHandle(pub NonZeroUsize);
 
 pub struct Command {
     pub info: CommandInfo,
@@ -90,13 +145,17 @@ pub struct Features {
     pub items: HashMap<FeatureHandle, Feature>,
 }
 
-pub struct FeatureHandle(pub usize);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FeatureHandle(pub NonZeroUsize);
 
 pub struct Feature {
     pub header: FeatureHeader,
 }
 
-pub struct FeatureHeader {}
+pub struct FeatureHeader {
+    pub standard_name: String,
+    pub output_name: String,
+}
 
 pub enum FeatureKind {
     Core(CoreFeature),
