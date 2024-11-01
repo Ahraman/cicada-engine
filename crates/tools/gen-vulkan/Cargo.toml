@@ -5,3 +5,9 @@ authors = ["Ahraman <ahraman.programming@gmail.com>"]
 description = """Binding generator for Vulkan API."""
 edition = "2021"
 rust-version = "1.82.0"
+
+[dependencies]
+proc-macro2 = "1.0.89"
+syn = "2.0.86"
+quote = "1.0.37"
+prettyplease = "0.2.25"

@@ -1,6 +1,7 @@
 #[derive(Debug)]
 pub enum Error {
     Cmd(CmdError),
+    Emit(EmitError),
 
     Io(std::io::Error),
 }
@@ -8,8 +9,10 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Cmd(error) => error.fmt(f),
-            Error::Io(error) => error.fmt(f),
+            Self::Cmd(error) => error.fmt(f),
+            Self::Emit(error) => error.fmt(f),
+
+            Self::Io(error) => error.fmt(f),
         }
     }
 }
@@ -19,6 +22,12 @@ impl std::error::Error for Error {}
 impl From<CmdError> for Error {
     fn from(value: CmdError) -> Self {
         Self::Cmd(value)
+    }
+}
+
+impl From<EmitError> for Error {
+    fn from(value: EmitError) -> Self {
+        Self::Emit(value)
     }
 }
 
@@ -46,3 +55,24 @@ impl std::fmt::Display for CmdError {
 }
 
 impl std::error::Error for CmdError {}
+
+#[derive(Debug)]
+pub enum EmitError {
+    Syn(syn::Error),
+}
+
+impl std::fmt::Display for EmitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Syn(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for EmitError {}
+
+impl From<syn::Error> for EmitError {
+    fn from(value: syn::Error) -> Self {
+        Self::Syn(value)
+    }
+}

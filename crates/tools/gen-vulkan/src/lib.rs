@@ -1,7 +1,9 @@
 use crate::{error::Error, load::load_file};
 
+pub mod emit;
 pub mod error;
 pub mod load;
+pub mod repr;
 
 #[derive(Default)]
 pub struct Settings {
