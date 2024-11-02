@@ -1,9 +1,5 @@
 use std::{collections::HashMap, num::NonZeroUsize};
 
-use proc_macro2::{Span, TokenStream};
-use quote::quote;
-use syn::Ident;
-
 #[derive(Default)]
 pub struct Vulkan {
     pub types: Types,
@@ -79,24 +75,7 @@ pub struct Type {
     pub kind: TypeKind,
 }
 
-impl Type {
-    pub fn decorated_name(&self, decors: &[Decor]) -> TokenStream {
-        let name = Ident::new(&self.info.output_name, Span::call_site());
-        let mut res = quote! {
-            #name
-        };
-
-        for decor in decors.iter().rev() {
-            res = match decor {
-                Decor::Const => res,
-                Decor::ConstPtr => quote! { *const #res },
-                Decor::MutPtr => quote! { *mut #res },
-            }
-        }
-
-        res
-    }
-}
+impl Type {}
 
 pub struct TypeInfo {
     pub standard_name: String,
