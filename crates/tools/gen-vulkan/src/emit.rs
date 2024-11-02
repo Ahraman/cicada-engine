@@ -41,13 +41,15 @@ impl Vulkan {
 
     fn emit_root_module(&self, settings: &EmitSettings) -> Result<(), Error> {
         let mut writer = BufWriter::new(File::create(settings.output_dir.join("mod.rs"))?);
-        writer.write(self.root_module_content()?.as_bytes())?;
-        writer.flush()?;
+        if let Some(content) = self.root_module_head()? {
+            writer.write(content.as_bytes())?;
+        }
 
+        writer.flush()?;
         Ok(())
     }
 
-    fn root_module_content(&self) -> Result<String, EmitError> {
+    fn root_module_head(&self) -> Result<Option<String>, EmitError> {
         let mut submodules = Vec::new();
         if self.has_commands() {
             submodules.push("commands");
@@ -91,48 +93,48 @@ impl Vulkan {
                 pub use self::{#mod_uses};
             };
 
-            let content = quote! {
+            let head = quote! {
                 #mod_defs
 
                 #mod_uses
             };
 
-            prettyplease::unparse(&syn::parse2(content)?)
+            Some(prettyplease::unparse(&syn::parse2(head)?))
         } else {
-            String::new()
+            None
         })
     }
 
     fn emit_cmds_module(&self, settings: &EmitSettings) -> Result<(), Error> {
         let mut writer = BufWriter::new(File::create(settings.output_dir.join("cmds.rs"))?);
-        writer.flush()?;
 
+        writer.flush()?;
         Ok(())
     }
 
     fn emit_enums_module(&self, settings: &EmitSettings) -> Result<(), Error> {
         let mut writer = BufWriter::new(File::create(settings.output_dir.join("enums.rs"))?);
-        writer.flush()?;
 
+        writer.flush()?;
         Ok(())
     }
 
     fn emit_result_module(&self, settings: &EmitSettings) -> Result<(), Error> {
         let mut writer = BufWriter::new(File::create(settings.output_dir.join("result.rs"))?);
-        writer.flush()?;
 
+        writer.flush()?;
         Ok(())
     }
 
     fn emit_structs_module(&self, settings: &EmitSettings) -> Result<(), Error> {
         let mut writer = BufWriter::new(File::create(settings.output_dir.join("structs.rs"))?);
-        self.write_structs_module_body(&mut writer)?;
-        writer.flush()?;
+        self.emit_structs_module_body(&mut writer)?;
 
+        writer.flush()?;
         Ok(())
     }
 
-    fn write_structs_module_body(&self, _writer: &impl Write) -> Result<String, EmitError> {
+    fn emit_structs_module_body(&self, writer: &mut impl Write) -> Result<(), Error> {
         for (type_info, struct_type) in self.types.items.iter().filter_map(|(_, ty)| {
             if let TypeKind::Struct(struct_type) = &ty.kind {
                 Some((&ty.info, struct_type))
@@ -140,10 +142,10 @@ impl Vulkan {
                 None
             }
         }) {
-            let _ = self.struct_defn(type_info, struct_type)?;
+            writer.write(self.struct_defn(type_info, struct_type)?.as_bytes())?;
         }
 
-        Ok(String::new())
+        Ok(())
     }
 
     fn struct_defn(
@@ -151,37 +153,60 @@ impl Vulkan {
         type_info: &TypeInfo,
         struct_type: &StructType,
     ) -> Result<String, EmitError> {
-        let _struct_name = Ident::new(&type_info.output_name, Span::call_site());
+        let struct_name = Ident::new(&type_info.output_name, Span::call_site());
 
+        let mut members_defn = TokenStream::new();
         for member in struct_type.members.iter() {
-            let _ = self.struct_member_defn(type_info, struct_type, member)?;
+            let member_defn = self.struct_member_defn(type_info, member)?;
+            members_defn = quote! {
+                #members_defn
+                #member_defn,
+            };
         }
 
-        Ok(String::new())
+        let feature_line = if let Some(handle) = type_info.feature {
+            if let Some(feature) = self.features.get(handle) {
+                let feature_name = feature.header.output_name.as_str();
+                quote! {
+                    #[cfg(feature = #feature_name)]
+                }
+            } else {
+                Default::default()
+            }
+        } else {
+            Default::default()
+        };
+
+        let visibility = Visibility::Public(Default::default());
+        let struct_defn = quote! {
+            #feature_line
+            #visibility struct #struct_name {
+                #members_defn
+            }
+        };
+
+        Ok(prettyplease::unparse(&syn::parse2(struct_defn)?))
     }
 
     fn struct_member_defn(
         &self,
         type_info: &TypeInfo,
-        struct_type: &StructType,
         member: &StructMember,
-    ) -> Result<String, EmitError> {
-        _ = type_info;
-        _ = struct_type;
-        let _visibility = Visibility::Public(Default::default());
-        let _member_name = Ident::new(&member.output_name, Span::call_site());
-        let _raw_type = self
-            .types
-            .get(member.decor_type.handle)
-            .ok_or(EmitError::BadStructMember(
-                type_info.standard_name.clone(),
-                member.standard_name.clone(),
-            ))?
-            .info
-            .output_name
-            .as_str();
+    ) -> Result<TokenStream, EmitError> {
+        let member_name = Ident::new(&member.output_name, Span::call_site());
+        let member_type =
+            self.types
+                .get(member.decor_type.handle)
+                .ok_or(EmitError::BadStructMember(
+                    type_info.standard_name.clone(),
+                    member.standard_name.clone(),
+                ))?;
 
-        Ok(String::new())
+        let type_name = member_type.decorated_name(&member.decor_type.decors);
+        let visibility = Visibility::Public(Default::default());
+        Ok(quote! {
+            #visibility #member_name: #type_name,
+        })
     }
 
     fn emit_unions_module(&self, settings: &EmitSettings) -> Result<(), Error> {
