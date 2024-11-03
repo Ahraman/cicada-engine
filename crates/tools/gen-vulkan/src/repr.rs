@@ -1,5 +1,12 @@
 use std::{collections::HashMap, num::NonZeroUsize};
 
+pub enum Deprecation {
+    False,
+    True,
+    Aliased,
+    Ignored,
+}
+
 #[derive(Default)]
 pub struct Vulkan {
     pub types: Types,
@@ -38,6 +45,7 @@ pub struct Types {
     pub struct_types: Vec<TypeHandle>,
     pub union_types: Vec<TypeHandle>,
     pub enum_types: Vec<TypeHandle>,
+    pub bitmask_types: Vec<TypeHandle>,
 }
 
 impl Types {
@@ -45,8 +53,30 @@ impl Types {
         self.items.get(&handle)
     }
 
+    pub fn find(&self, standard_name: &str) -> Option<TypeHandle> {
+        self.items
+            .iter()
+            .find(|(_, ty)| ty.head.standard_name == standard_name)
+            .map(|(&handle, _)| handle)
+    }
+
     pub fn insert(&mut self, ty: Type) -> TypeHandle {
         let handle = self.next_handle();
+
+        if ty.head.standard_name == "VkResult" {
+            let _ = self.result_type.replace(handle);
+        } else {
+            match &ty.body {
+                TypeBody::Include(_) => {}
+                TypeBody::Define(_) => {}
+                TypeBody::Imported(_) => {}
+                TypeBody::Builtin(_) => {}
+                TypeBody::Enum(_) => self.enum_types.push(handle),
+                TypeBody::Bitmask(_) => self.bitmask_types.push(handle),
+                TypeBody::Struct(_) => self.struct_types.push(handle),
+            }
+        }
+
         self.items.insert(handle, ty);
         handle
     }
@@ -61,7 +91,7 @@ pub struct TypeHandle(pub NonZeroUsize);
 
 pub struct DecorType {
     pub handle: TypeHandle,
-    pub decors: Vec<Decor>,
+    pub decors: Box<[Decor]>,
 }
 
 pub enum Decor {
@@ -71,39 +101,84 @@ pub enum Decor {
 }
 
 pub struct Type {
-    pub info: TypeInfo,
-    pub kind: TypeKind,
+    pub head: TypeHead,
+    pub body: TypeBody,
 }
 
-impl Type {}
+impl Type {
+    pub fn new(head: TypeHead, body: TypeBody) -> Self {
+        Self { head, body }
+    }
+}
 
-pub struct TypeInfo {
+#[derive(Default)]
+pub struct TypeHead {
     pub standard_name: String,
     pub output_name: String,
+    pub deprecated: Option<Deprecation>,
+    pub requires: Option<TypeHandle>,
     pub feature: Option<FeatureHandle>,
 }
 
-pub enum TypeKind {
-    Builtin(BuiltinType),
-    Enum(EnumType),
-    Bitmask(BitmaskType),
-    Bitfield(BitfieldType),
-    Struct(StructType),
+impl TypeHead {
+    pub fn new(
+        standard_name: String,
+        output_name: String,
+        requires: Option<TypeHandle>,
+        deprecated: Option<Deprecation>,
+    ) -> Self {
+        Self {
+            standard_name,
+            output_name,
+            deprecated,
+            requires,
+            feature: None,
+        }
+    }
 }
 
-pub struct BuiltinType {}
+pub enum TypeBody {
+    Include(IncludeBody),
+    Define(DefineBody),
+    Imported(ImportedBody),
+    Builtin(BuiltinBody),
+    Enum(EnumTypeBody),
+    Bitmask(BitmaskBody),
+    Struct(StructBody),
+}
 
-pub struct EnumType {}
+#[derive(Default)]
+pub struct IncludeBody {
+    pub header_name: String,
+    pub is_local: bool,
+}
 
-pub struct BitmaskType {
+#[derive(Default)]
+pub struct DefineBody {
+    pub requires: Option<TypeHandle>,
+    pub defined: Option<TypeHandle>,
+}
+
+#[derive(Default)]
+pub struct ImportedBody {}
+
+pub struct BuiltinBody {}
+
+pub struct EnumTypeBody {}
+
+pub struct BitmaskBody {
     pub bitfield_type: TypeHandle,
 }
 
-pub struct BitfieldType {
+pub struct BitfieldBody {
     pub bitmask_type: TypeHandle,
 }
 
-pub struct StructType {
+#[derive(Default)]
+pub struct StructBody {
+    pub returned_only: Option<bool>,
+    pub allow_duplicate: Option<bool>,
+    pub extends_structs: Vec<TypeHandle>,
     pub members: Vec<StructMember>,
 }
 

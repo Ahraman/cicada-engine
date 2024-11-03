@@ -10,30 +10,31 @@ use syn::{Ident, Visibility};
 
 use crate::{
     error::{EmitError, Error},
-    repr::{Decor, StructMember, StructType, TypeInfo, TypeKind, Vulkan},
+    repr::{Decor, StructBody, StructMember, TypeBody, TypeHead, Vulkan},
 };
 
+#[derive(Default)]
 pub struct EmitSettings {
     pub output_dir: PathBuf,
 }
 
 impl Vulkan {
-    pub fn emit(self, settings: EmitSettings) -> Result<(), Error> {
-        self.emit_root_module(&settings)?;
+    pub fn emit(self, settings: &EmitSettings) -> Result<(), Error> {
+        self.emit_root_module(settings)?;
         if self.has_commands() {
-            self.emit_cmds_module(&settings)?;
+            self.emit_cmds_module(settings)?;
         }
         if self.has_enums() {
-            self.emit_enums_module(&settings)?;
+            self.emit_enums_module(settings)?;
         }
         if self.has_result() {
-            self.emit_result_module(&settings)?;
+            self.emit_result_module(settings)?;
         }
         if self.has_structs() {
-            self.emit_structs_module(&settings)?;
+            self.emit_structs_module(settings)?;
         }
         if self.has_unions() {
-            self.emit_unions_module(&settings)?;
+            self.emit_unions_module(settings)?;
         }
 
         Ok(())
@@ -135,8 +136,8 @@ impl Vulkan {
 
     fn emit_structs_module_body(&self, writer: &mut impl Write) -> Result<(), Error> {
         for (type_info, struct_type) in self.types.items.iter().filter_map(|(_, ty)| {
-            if let TypeKind::Struct(struct_type) = &ty.kind {
-                Some((&ty.info, struct_type))
+            if let TypeBody::Struct(struct_type) = &ty.body {
+                Some((&ty.head, struct_type))
             } else {
                 None
             }
@@ -151,8 +152,8 @@ impl Vulkan {
     fn write_struct_impls(
         &self,
         writer: &mut impl Write,
-        type_info: &TypeInfo,
-        struct_type: &StructType,
+        type_info: &TypeHead,
+        struct_type: &StructBody,
     ) -> Result<(), Error> {
         if let Some(content) = struct_type.emit_impl_default(self, type_info)? {
             writer.write(content.as_bytes())?;
@@ -169,7 +170,7 @@ impl Vulkan {
     }
 }
 
-impl TypeInfo {
+impl TypeHead {
     fn decorated_name(&self, decors: &[Decor]) -> TokenStream {
         let name = Ident::new(&self.output_name, Span::call_site());
         let mut res = quote! {
@@ -230,8 +231,8 @@ impl TypeInfo {
     }
 }
 
-impl StructType {
-    fn emit_defn(&self, vk: &Vulkan, type_info: &TypeInfo) -> Result<String, EmitError> {
+impl StructBody {
+    fn emit_defn(&self, vk: &Vulkan, type_info: &TypeHead) -> Result<String, EmitError> {
         let member_defns = self.members.iter().fold(
             Ok(TokenStream::new()),
             |acc: Result<_, EmitError>, member| {
@@ -262,7 +263,7 @@ impl StructType {
     fn emit_impl_default(
         &self,
         vk: &Vulkan,
-        type_info: &TypeInfo,
+        type_info: &TypeHead,
     ) -> Result<Option<String>, EmitError> {
         let type_name = type_info.output_name.as_str();
         let feature_line = type_info.output_feature(vk).unwrap_or_default();
@@ -296,7 +297,7 @@ impl StructType {
 }
 
 impl StructMember {
-    fn emit_default(&self, vk: &Vulkan, type_info: &TypeInfo) -> Result<TokenStream, EmitError> {
+    fn emit_default(&self, vk: &Vulkan, type_info: &TypeHead) -> Result<TokenStream, EmitError> {
         let member_name = Ident::new(&self.output_name, Span::call_site());
         let member_type =
             vk.types
@@ -306,13 +307,13 @@ impl StructMember {
                     self.standard_name.clone(),
                 ))?;
 
-        let default_value = member_type.info.default_value(&self.decor_type.decors);
+        let default_value = member_type.head.default_value(&self.decor_type.decors);
         Ok(quote! {
             #member_name: #default_value,
         })
     }
 
-    fn emit_defn(&self, vk: &Vulkan, type_info: &TypeInfo) -> Result<TokenStream, EmitError> {
+    fn emit_defn(&self, vk: &Vulkan, type_info: &TypeHead) -> Result<TokenStream, EmitError> {
         let member_name = Ident::new(&self.output_name, Span::call_site());
         let member_type =
             vk.types
@@ -322,7 +323,7 @@ impl StructMember {
                     self.standard_name.clone(),
                 ))?;
 
-        let type_name = member_type.info.decorated_name(&self.decor_type.decors);
+        let type_name = member_type.head.decorated_name(&self.decor_type.decors);
         let visibility = Visibility::Public(Default::default());
         Ok(quote! {
             #visibility #member_name: #type_name,

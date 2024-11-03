@@ -1,32 +1,33 @@
 use gen_vulkan::{
+    emit::EmitSettings,
     error::{CmdError, Error},
-    Settings,
+    parse::ParseSettings,
 };
 
 fn main() -> Result<(), Error> {
-    let settings = process_cmd_line()?;
-    gen_vulkan::run(&settings)?;
+    let (parse, emit) = process_cmd_line()?;
+    gen_vulkan::run(&parse, &emit)?;
 
     Ok(())
 }
 
-fn process_cmd_line() -> Result<Settings, CmdError> {
+fn process_cmd_line() -> Result<(ParseSettings, EmitSettings), CmdError> {
     let mut args = std::env::args();
-    let mut settings = Settings::default();
+    let (mut parse, emit) = (ParseSettings::default(), EmitSettings::default());
 
     let _ = args.next(); // First is always the executable location.
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--path" => {
-                settings.path = Some(
+                parse.path = Some(
                     args.next()
                         .ok_or(CmdError::ReqCmdArg("--path".to_owned()))?,
                 )
             }
-            "-nV" | "--no-video" => settings.no_video = true,
+            // "-nV" | "--no-video" => settings.no_video = true,
             _ => return Err(CmdError::BadCmdArg(arg)),
         }
     }
 
-    Ok(settings)
+    Ok((parse, emit))
 }

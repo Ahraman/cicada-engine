@@ -3,9 +3,9 @@ use std::{
     io::{BufReader, Read},
 };
 
-use crate::{error::Error, Settings};
+use crate::{error::Error, ParseSettings};
 
-pub fn load_file(file: &str, settings: &Settings) -> Result<impl Read, Error> {
+pub fn load_file(file: &str, settings: &ParseSettings) -> Result<impl Read, Error> {
     let file = File::open(format!(
         "{}/{file}",
         settings.path.as_deref().unwrap_or("temp/registry/vulkan")

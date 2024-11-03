@@ -66,10 +66,18 @@ impl std::error::Error for CmdError {}
 
 #[derive(Debug)]
 pub enum ParseError {
-    BadElemStart(String, String),
-    UnexpEnd(String),
+    BadStart(String, String),
+    UnexpStart(String, String),
+    UnexpEnd(String, String),
+    DocEnd(String),
     UnexpCont(String, String),
-    UnexpChild(String, String),
+    MissingAttrib(String, String),
+    BadAttrb(String, String, String),
+    BadDeprAttrib(String, String),
+    TypeNotFound(String),
+    BadType,
+
+    ParseBool(std::str::ParseBoolError),
 
     XmlRead(xml::reader::Error),
 }
@@ -77,18 +85,39 @@ pub enum ParseError {
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::BadElemStart(expected, element) => {
+            Self::BadStart(expected, element) => {
                 write!(f, "expected element <{expected}> but found <{element}>")
             }
-            Self::UnexpEnd(element) => {
+            Self::UnexpStart(element, child) => {
+                write!(f, "element <{element}> has unexpected child <{child}>")
+            }
+            Self::UnexpEnd(element, end) => {
+                write!(f, "element <{element}> contains unexpected end </{end}>")
+            }
+            Self::DocEnd(element) => {
                 write!(f, "unexpected eof at element <{element}>")
             }
             Self::UnexpCont(element, content) => {
                 write!(f, "element <{element}> has unexpected content '{content}'")
             }
-            Self::UnexpChild(element, child) => {
-                write!(f, "element <{element}> has unexpected child <{child}>")
+            Self::MissingAttrib(element, attrib) => {
+                write!(f, "element <{element}> missing required attrib '{attrib}'")
             }
+            Self::BadAttrb(element, attrib, value) => write!(
+                f,
+                "element <{element}> has bad attribute '{attrib}={value}'"
+            ),
+            Self::BadDeprAttrib(attrib, value) => {
+                write!(f, "attrib '{attrib}' has invalid value '{value}'")
+            }
+            Self::TypeNotFound(ty) => {
+                write!(f, "type '{ty}' required but not found")
+            }
+            Self::BadType => {
+                write!(f, "type with no name")
+            }
+
+            Self::ParseBool(error) => error.fmt(f),
 
             Self::XmlRead(error) => error.fmt(f),
         }
@@ -96,6 +125,12 @@ impl std::fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
+
+impl From<std::str::ParseBoolError> for ParseError {
+    fn from(value: std::str::ParseBoolError) -> Self {
+        Self::ParseBool(value)
+    }
+}
 
 impl From<xml::reader::Error> for ParseError {
     fn from(value: xml::reader::Error) -> Self {
