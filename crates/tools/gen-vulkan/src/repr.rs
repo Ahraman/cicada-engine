@@ -70,10 +70,12 @@ impl Types {
                 TypeBody::Include(_) => {}
                 TypeBody::Define(_) => {}
                 TypeBody::Imported(_) => {}
-                TypeBody::Builtin(_) => {}
+                TypeBody::Base(_) => {}
                 TypeBody::Enum(_) => self.enum_types.push(handle),
                 TypeBody::Bitmask(_) => self.bitmask_types.push(handle),
                 TypeBody::Struct(_) => self.struct_types.push(handle),
+                TypeBody::Union(_) => {}
+                TypeBody::FnPtr(_) => {}
             }
         }
 
@@ -141,10 +143,12 @@ pub enum TypeBody {
     Include(IncludeBody),
     Define(DefineBody),
     Imported(ImportedBody),
-    Builtin(BuiltinBody),
-    Enum(EnumTypeBody),
+    Base(BaseTypeBody),
+    Enum(EnumBody),
     Bitmask(BitmaskBody),
     Struct(StructBody),
+    Union(UnionBody),
+    FnPtr(FnPtrBody),
 }
 
 #[derive(Default)]
@@ -154,20 +158,22 @@ pub struct IncludeBody {
 }
 
 #[derive(Default)]
-pub struct DefineBody {
-    pub requires: Option<TypeHandle>,
-    pub defined: Option<TypeHandle>,
-}
+pub struct DefineBody {}
 
 #[derive(Default)]
 pub struct ImportedBody {}
 
-pub struct BuiltinBody {}
+#[derive(Default)]
+pub struct BaseTypeBody {
+    pub output_type: Option<TypeHandle>,
+}
 
-pub struct EnumTypeBody {}
+pub struct EnumBody {}
 
+#[derive(Default)]
 pub struct BitmaskBody {
-    pub bitfield_type: TypeHandle,
+    pub output_type: Option<TypeHandle>,
+    pub bitmask_type: Option<TypeHandle>,
 }
 
 pub struct BitfieldBody {
@@ -187,6 +193,12 @@ pub struct StructMember {
     pub output_name: String,
     pub decor_type: DecorType,
 }
+
+#[derive(Default)]
+pub struct UnionBody {}
+
+#[derive(Default)]
+pub struct FnPtrBody {}
 
 #[derive(Default)]
 pub struct Enums {

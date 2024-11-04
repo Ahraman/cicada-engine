@@ -4,7 +4,10 @@ use xml::{attribute::OwnedAttribute, reader::XmlEvent};
 
 use crate::{
     error::{Error, ParseError},
-    repr::{Deprecation, ImportedBody, IncludeBody, Type, TypeBody, TypeHandle, TypeHead, Vulkan},
+    repr::{
+        BaseTypeBody, BitmaskBody, DefineBody, Deprecation, ImportedBody, IncludeBody, Type,
+        TypeBody, TypeHandle, TypeHead, Vulkan,
+    },
 };
 
 trait VecAttributesExt {
@@ -163,6 +166,8 @@ where
                 XmlEvent::EndElement { name } => {
                     if name.local_name == element {
                         break;
+                    } else {
+                        return Err(ParseError::UnexpEnd(element, name.local_name));
                     }
                 }
                 XmlEvent::EndDocument => return Err(ParseError::DocEnd(element)),
@@ -344,6 +349,67 @@ impl Parse for ParseType {
     }
 }
 
+struct TypeElem {
+    pub content: String,
+    pub kind: TypeElemKind,
+}
+
+impl TypeElem {
+    const NAME: &'static str = "name";
+    const TYPE: &'static str = "type";
+    const COMMENT: &'static str = "comment";
+}
+
+enum TypeElemKind {
+    Type,
+    Name,
+    Comment,
+}
+
+impl Parse for TypeElem {
+    type Target = Self;
+
+    fn parse(
+        _: &mut Vulkan,
+        reader: &mut xml::EventReader<impl Read>,
+        element: String,
+        _: HashMap<String, String>,
+    ) -> Result<Self, ParseError> {
+        let kind = match element.as_str() {
+            Self::TYPE => TypeElemKind::Type,
+            Self::NAME => TypeElemKind::Name,
+            Self::COMMENT => TypeElemKind::Comment,
+            _ => return Err(ParseError::BadStart(ParseType::NAME.to_string(), element)),
+        };
+
+        let content = {
+            let mut content = String::default();
+            loop {
+                match reader.next()? {
+                    XmlEvent::EndDocument => return Err(ParseError::DocEnd(element)),
+                    XmlEvent::StartElement { name, .. } => {
+                        return Err(ParseError::BadStart(element, name.local_name))
+                    }
+                    XmlEvent::EndElement { name } => {
+                        if name.local_name == element {
+                            break content;
+                        } else {
+                            return Err(ParseError::UnexpEnd(element, name.local_name));
+                        }
+                    }
+                    XmlEvent::Characters(text) => content += &text,
+                    _ => {}
+                }
+            }
+        };
+
+        Ok(Self {
+            content,
+            kind: kind,
+        })
+    }
+}
+
 pub struct ParsedTypeHead {
     pub standard_name: Option<String>,
     pub requires: Option<TypeHandle>,
@@ -376,18 +442,17 @@ impl ParsedTypeHead {
     where
         F: FnOnce(&str) -> String,
     {
-        match self.standard_name {
-            Some(standard_name) => {
-                let output_name = transform(&standard_name);
-                Ok(TypeHead::new(
-                    standard_name,
-                    output_name,
-                    self.requires,
-                    self.deprecated,
-                ))
-            }
-            None => Err(ParseError::BadType),
-        }
+        let output_name = match &self.standard_name {
+            Some(standard_name) => transform(standard_name),
+            None => Default::default(),
+        };
+
+        Ok(TypeHead::new(
+            self.standard_name.unwrap_or_default(),
+            output_name,
+            self.requires,
+            self.deprecated,
+        ))
     }
 }
 
@@ -445,6 +510,37 @@ struct ParsedImportedType {
     pub body: ImportedBody,
 }
 
+impl ParsedImportedType {
+    const OUTPUT_NAMES: &[(&'static str, &'static str)] = &[
+        // C types
+        ("int", "std::ffi::c_int"),
+        ("void", "std::ffi::c_void"),
+        ("char", "std::ffi::c_char"),
+        ("float", "f32"),
+        ("double", "f64"),
+        ("int8_t", "i8"),
+        ("int16_t", "i16"),
+        ("int32_t", "i32"),
+        ("int64_t", "i64"),
+        ("uint8_t", "u8"),
+        ("uint16_t", "u16"),
+        ("uint32_t", "u32"),
+        ("uint64_t", "u64"),
+        ("size_t", "usize"),
+        // windows
+        ("HINSTANCE", "Win32::Foundation::HINSTANCE"),
+        ("HWND", "Win32::Foundation::HWND"),
+        ("HMONITOR", "Win32::Graphics::Gdi::HMONITOR"),
+        ("HANDLE", "Win32::Foundation::HANDLE"),
+        (
+            "SECURITY_ATTRIBUTES",
+            "Win32::Security::SECURITY_ATTRIBUTES",
+        ),
+        ("DWORD", "u32"),
+        ("LPCWSTR", "windows::core::PCWSTR"), // TODO: LPCWSTR vs PCWSTR ???
+    ];
+}
+
 impl BasicParse for ParsedImportedType {
     const NAME: &'static str = ParseType::NAME;
 
@@ -453,38 +549,8 @@ impl BasicParse for ParsedImportedType {
         vk: &mut Vulkan,
         mut attribs: HashMap<String, String>,
     ) -> Result<(), ParseError> {
-        const OUTPUT_NAMES: &[(&'static str, &'static str)] = &[
-            // C types
-            ("int", "std::ffi::c_int"),
-            ("void", "std::ffi::c_void"),
-            ("char", "std::ffi::c_char"),
-            ("float", "f32"),
-            ("double", "f64"),
-            ("int8_t", "i8"),
-            ("int16_t", "i16"),
-            ("int32_t", "i32"),
-            ("int64_t", "i64"),
-            ("uint8_t", "u8"),
-            ("uint16_t", "u16"),
-            ("uint32_t", "u32"),
-            ("uint64_t", "u64"),
-            ("size_t", "usize"),
-            // windows
-            ("HINSTANCE", "Win32::Foundation::HINSTANCE"),
-            ("HWND", "Win32::Foundation::HWND"),
-            ("HMONITOR", "Win32::Graphics::Gdi::HMONITOR"),
-            ("HANDLE", "Win32::Foundation::HANDLE"),
-            (
-                "SECURITY_ATTRIBUTES",
-                "Win32::Security::SECURITY_ATTRIBUTES",
-            ),
-            ("DWORD", "u32"),
-            // TODO: make sure LPCWSTR vs PCWSTR is the same thing
-            ("LPCWSTR", "windows::core::PCWSTR"),
-        ];
-
         self.head = ParsedTypeHead::from_attribs(vk, &mut attribs)?.into_head(|standard_name| {
-            OUTPUT_NAMES
+            Self::OUTPUT_NAMES
                 .iter()
                 .find(|(key, _)| standard_name == *key)
                 .map(|(_, value)| value.to_string())
@@ -501,7 +567,10 @@ impl Into<Type> for ParsedImportedType {
 }
 
 #[derive(Default)]
-struct ParsedDefineType {}
+struct ParsedDefineType {
+    pub head: TypeHead,
+    pub body: DefineBody,
+}
 
 impl ParsedDefineType {
     const CATEGORY: &'static str = "define";
@@ -509,16 +578,53 @@ impl ParsedDefineType {
 
 impl BasicParse for ParsedDefineType {
     const NAME: &'static str = ParseType::NAME;
+
+    fn parse_attribs(
+        &mut self,
+        vk: &mut Vulkan,
+        mut attribs: HashMap<String, String>,
+    ) -> Result<(), ParseError> {
+        self.head =
+            ParsedTypeHead::from_attribs(vk, &mut attribs)?.into_head(|_| Default::default())?;
+        // head.output_name is currently not set, but it might be needed later on, idk yet
+        Ok(())
+    }
+
+    fn parse_child(
+        &mut self,
+        vk: &mut Vulkan,
+        reader: &mut xml::EventReader<impl Read>,
+        element: String,
+        attribs: HashMap<String, String>,
+    ) -> Result<(), ParseError> {
+        let elem = TypeElem::parse(vk, reader, element, attribs)?;
+        if let TypeElemKind::Name = elem.kind {
+            self.head.standard_name = elem.content;
+        }
+
+        Ok(())
+    }
+
+    fn parse_cont(&mut self, _: &mut Vulkan, _: String) -> Result<(), ParseError> {
+        Ok(())
+    }
 }
 
 impl Into<Type> for ParsedDefineType {
     fn into(self) -> Type {
-        todo!()
+        Type::new(self.head, TypeBody::Define(self.body))
     }
 }
 
 #[derive(Default)]
-struct ParsedBaseType {}
+struct ParsedBaseType {
+    pub head: TypeHead,
+    pub body: BaseTypeBody,
+}
+
+impl ParsedBaseType {
+    const OUTPUT_NAMES: &[(&'static str, &'static str)] = &[];
+}
 
 impl ParsedBaseType {
     const CATEGORY: &'static str = "basetype";
@@ -526,16 +632,60 @@ impl ParsedBaseType {
 
 impl BasicParse for ParsedBaseType {
     const NAME: &'static str = ParseType::NAME;
+
+    fn parse_attribs(
+        &mut self,
+        vk: &mut Vulkan,
+        mut attribs: HashMap<String, String>,
+    ) -> Result<(), ParseError> {
+        self.head =
+            ParsedTypeHead::from_attribs(vk, &mut attribs)?.into_head(|_| Default::default())?;
+
+        Ok(())
+    }
+
+    fn parse_child(
+        &mut self,
+        vk: &mut Vulkan,
+        reader: &mut xml::EventReader<impl Read>,
+        element: String,
+        attribs: HashMap<String, String>,
+    ) -> Result<(), ParseError> {
+        let elem = TypeElem::parse(vk, reader, element, attribs)?;
+        match elem.kind {
+            TypeElemKind::Name => self.head.standard_name = elem.content,
+            TypeElemKind::Type => self.body.output_type = vk.types.find(&elem.content),
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn parse_cont(&mut self, _: &mut Vulkan, _: String) -> Result<(), ParseError> {
+        Ok(())
+    }
 }
 
 impl Into<Type> for ParsedBaseType {
-    fn into(self) -> Type {
-        todo!()
+    fn into(mut self) -> Type {
+        self.head.output_name = match Self::OUTPUT_NAMES
+            .iter()
+            .find(|(key, _)| self.head.standard_name == *key)
+            .map(|(_, value)| value.to_string())
+        {
+            Some(output_type) => output_type,
+            None => self.head.standard_name.clone(),
+        };
+
+        Type::new(self.head, TypeBody::Base(self.body))
     }
 }
 
 #[derive(Default)]
-struct ParsedBitmaskType {}
+struct ParsedBitmaskType {
+    pub head: TypeHead,
+    pub body: BitmaskBody,
+}
 
 impl ParsedBitmaskType {
     const CATEGORY: &'static str = "bitmask";
@@ -543,6 +693,41 @@ impl ParsedBitmaskType {
 
 impl BasicParse for ParsedBitmaskType {
     const NAME: &'static str = ParseType::NAME;
+
+    fn parse_attribs(
+        &mut self,
+        vk: &mut Vulkan,
+        mut attribs: HashMap<String, String>,
+    ) -> Result<(), ParseError> {
+        self.head =
+            ParsedTypeHead::from_attribs(vk, &mut attribs)?.into_head(|_| Default::default())?;
+
+        // body.bitmask_type requires enums being registered, but they will be registered later on,
+        // so these should be re-read later on.
+
+        Ok(())
+    }
+
+    fn parse_child(
+        &mut self,
+        vk: &mut Vulkan,
+        reader: &mut xml::EventReader<impl Read>,
+        element: String,
+        attribs: HashMap<String, String>,
+    ) -> Result<(), ParseError> {
+        let elem = TypeElem::parse(vk, reader, element, attribs)?;
+        match elem.kind {
+            TypeElemKind::Name => self.head.standard_name = elem.content,
+            TypeElemKind::Type => self.body.output_type = vk.types.find(&elem.content),
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn parse_cont(&mut self, _: &mut Vulkan, _: String) -> Result<(), ParseError> {
+        Ok(())
+    }
 }
 
 impl Into<Type> for ParsedBitmaskType {
