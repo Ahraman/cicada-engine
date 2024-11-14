@@ -1,261 +1,264 @@
-use std::{collections::HashMap, num::NonZeroUsize};
+use std::{num::NonZeroUsize, str::FromStr};
 
+#[derive(Default)]
+pub struct Vulkan {}
+
+#[derive(Default)]
 pub enum Deprecation {
+    #[default]
     False,
     True,
     Aliased,
     Ignored,
 }
 
-#[derive(Default)]
-pub struct Vulkan {
-    pub types: Types,
-    pub enums: Enums,
-    pub commands: Commands,
-    pub features: Features,
-}
+impl FromStr for Deprecation {
+    type Err = ();
 
-impl Vulkan {
-    pub fn has_result(&self) -> bool {
-        self.types.result_type.is_some()
-    }
-
-    pub fn has_enums(&self) -> bool {
-        !self.types.enum_types.is_empty()
-    }
-
-    pub fn has_structs(&self) -> bool {
-        !self.types.struct_types.is_empty()
-    }
-
-    pub fn has_unions(&self) -> bool {
-        !self.types.union_types.is_empty()
-    }
-
-    pub fn has_commands(&self) -> bool {
-        !self.commands.items.is_empty()
-    }
-}
-
-#[derive(Default)]
-pub struct Types {
-    pub items: HashMap<TypeHandle, Type>,
-
-    pub result_type: Option<TypeHandle>,
-    pub struct_types: Vec<TypeHandle>,
-    pub union_types: Vec<TypeHandle>,
-    pub enum_types: Vec<TypeHandle>,
-    pub bitmask_types: Vec<TypeHandle>,
-}
-
-impl Types {
-    pub fn get(&self, handle: TypeHandle) -> Option<&Type> {
-        self.items.get(&handle)
-    }
-
-    pub fn find(&self, standard_name: &str) -> Option<TypeHandle> {
-        self.items
-            .iter()
-            .find(|(_, ty)| ty.head.standard_name == standard_name)
-            .map(|(&handle, _)| handle)
-    }
-
-    pub fn insert(&mut self, ty: Type) -> TypeHandle {
-        let handle = self.next_handle();
-
-        if ty.head.standard_name == "VkResult" {
-            let _ = self.result_type.replace(handle);
-        } else {
-            match &ty.body {
-                TypeBody::Include(_) => {}
-                TypeBody::Define(_) => {}
-                TypeBody::Imported(_) => {}
-                TypeBody::Base(_) => {}
-                TypeBody::Enum(_) => self.enum_types.push(handle),
-                TypeBody::Bitmask(_) => self.bitmask_types.push(handle),
-                TypeBody::Struct(_) => self.struct_types.push(handle),
-                TypeBody::Union(_) => {}
-                TypeBody::FnPtr(_) => {}
-            }
-        }
-
-        self.items.insert(handle, ty);
-        handle
-    }
-
-    pub fn next_handle(&self) -> TypeHandle {
-        TypeHandle(NonZeroUsize::MIN.saturating_add(self.items.len()))
+    fn from_str(s: &str) -> Result<Self, ()> {
+        Ok(match s {
+            "false" => Self::False,
+            "true" => Self::True,
+            "aliased" => Self::Aliased,
+            "ignored" => Self::Ignored,
+            _ => return Err(()),
+        })
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeHandle(pub NonZeroUsize);
 
-pub struct DecorType {
-    pub handle: TypeHandle,
-    pub decors: Box<[Decor]>,
-}
-
-pub enum Decor {
-    Const,
-    ConstPtr,
-    MutPtr,
-}
-
+#[derive(Debug)]
 pub struct Type {
-    pub head: TypeHead,
-    pub body: TypeBody,
+    pub common: TypeCommon,
+    pub details: TypeDetails,
 }
 
-impl Type {
-    pub fn new(head: TypeHead, body: TypeBody) -> Self {
-        Self { head, body }
-    }
-}
-
-#[derive(Default)]
-pub struct TypeHead {
+#[derive(Debug, Default)]
+pub struct TypeCommon {
     pub standard_name: String,
-    pub output_name: String,
-    pub deprecated: Option<Deprecation>,
-    pub requires: Option<TypeHandle>,
-    pub feature: Option<FeatureHandle>,
+    pub standard_aliases: Vec<String>,
 }
 
-impl TypeHead {
-    pub fn new(
-        standard_name: String,
-        output_name: String,
-        requires: Option<TypeHandle>,
-        deprecated: Option<Deprecation>,
-    ) -> Self {
-        Self {
-            standard_name,
-            output_name,
-            deprecated,
-            requires,
-            feature: None,
+#[derive(Debug)]
+pub enum TypeDetails {
+    Include(IncludeDetails),
+    Define(DefineDetails),
+    Base(BaseTypeDetails),
+    Handle(HandleDetails),
+    Bitmask(BitmaskDetails),
+    Enum(EnumDetails),
+    FnPtr(FnPtrDetails),
+    Struct(StructDetails),
+    Union(UnionDetails),
+    Imported(ImportedDetails),
+}
+
+#[derive(Debug, Default)]
+pub struct IncludeDetails {}
+
+#[derive(Debug, Default)]
+pub struct IncludeType {
+    pub common: TypeCommon,
+    pub details: IncludeDetails,
+}
+
+impl From<IncludeType> for Type {
+    fn from(value: IncludeType) -> Self {
+        Type {
+            common: value.common,
+            details: TypeDetails::Include(value.details),
         }
     }
 }
 
-pub enum TypeBody {
-    Include(IncludeBody),
-    Define(DefineBody),
-    Imported(ImportedBody),
-    Base(BaseTypeBody),
-    Enum(EnumBody),
-    Bitmask(BitmaskBody),
-    Struct(StructBody),
-    Union(UnionBody),
-    FnPtr(FnPtrBody),
+#[derive(Debug, Default)]
+pub struct DefineDetails {}
+
+#[derive(Debug, Default)]
+pub struct DefineType {
+    pub common: TypeCommon,
+    pub details: DefineDetails,
 }
 
-#[derive(Default)]
-pub struct IncludeBody {
-    pub header_name: String,
-    pub is_local: bool,
+impl From<DefineType> for Type {
+    fn from(value: DefineType) -> Self {
+        Type {
+            common: value.common,
+            details: TypeDetails::Define(value.details),
+        }
+    }
 }
 
-#[derive(Default)]
-pub struct DefineBody {}
+#[derive(Debug, Default)]
+pub struct BaseTypeDetails {}
 
-#[derive(Default)]
-pub struct ImportedBody {}
-
-#[derive(Default)]
-pub struct BaseTypeBody {
-    pub output_type: Option<TypeHandle>,
+#[derive(Debug, Default)]
+pub struct BaseType {
+    pub common: TypeCommon,
+    pub details: BaseTypeDetails,
 }
 
-pub struct EnumBody {}
-
-#[derive(Default)]
-pub struct BitmaskBody {
-    pub output_type: Option<TypeHandle>,
-    pub bitmask_type: Option<TypeHandle>,
+impl From<BaseType> for Type {
+    fn from(value: BaseType) -> Self {
+        Type {
+            common: value.common,
+            details: TypeDetails::Base(value.details),
+        }
+    }
 }
 
-pub struct BitfieldBody {
-    pub bitmask_type: TypeHandle,
+#[derive(Debug, Default)]
+pub struct HandleDetails {}
+
+#[derive(Debug, Default)]
+pub struct HandleType {
+    pub common: TypeCommon,
+    pub details: HandleDetails,
 }
 
-#[derive(Default)]
-pub struct StructBody {
-    pub returned_only: Option<bool>,
-    pub allow_duplicate: Option<bool>,
-    pub extends_structs: Vec<TypeHandle>,
-    pub members: Vec<StructMember>,
+impl From<HandleType> for Type {
+    fn from(value: HandleType) -> Self {
+        Type {
+            common: value.common,
+            details: TypeDetails::Handle(value.details),
+        }
+    }
 }
 
-pub struct StructMember {
-    pub standard_name: String,
-    pub output_name: String,
-    pub decor_type: DecorType,
+#[derive(Debug)]
+pub struct BitmaskDetails {
+    pub output_type: TypeHandle,
 }
 
-#[derive(Default)]
-pub struct UnionBody {}
-
-#[derive(Default)]
-pub struct FnPtrBody {}
-
-#[derive(Default)]
-pub struct Enums {
-    pub items: Vec<Enum>,
+#[derive(Debug)]
+pub struct BitmaskType {
+    pub common: TypeCommon,
+    pub details: BitmaskDetails,
 }
 
-#[derive(Default)]
-pub struct Enum {
-    pub values: Vec<EnumValue>,
+impl From<BitmaskType> for Type {
+    fn from(value: BitmaskType) -> Self {
+        Type {
+            common: value.common,
+            details: TypeDetails::Bitmask(value.details),
+        }
+    }
 }
 
-pub struct EnumValue {}
+#[derive(Debug, Default)]
+pub struct EnumDetails {}
 
-#[derive(Default)]
-pub struct Commands {
-    pub items: HashMap<CommandHandle, Command>,
+#[derive(Debug)]
+pub struct EnumType {
+    pub common: TypeCommon,
+    pub details: EnumDetails,
+}
+
+impl From<EnumType> for Type {
+    fn from(value: EnumType) -> Self {
+        Type {
+            common: value.common,
+            details: TypeDetails::Enum(value.details),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct FnPtrDetails {}
+
+#[derive(Debug, Default)]
+pub struct FnPtrType {
+    pub common: TypeCommon,
+    pub details: FnPtrDetails,
+}
+
+impl From<FnPtrType> for Type {
+    fn from(value: FnPtrType) -> Self {
+        Type {
+            common: value.common,
+            details: TypeDetails::FnPtr(value.details),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct StructDetails {}
+
+#[derive(Debug, Default)]
+pub struct StructType {
+    pub common: TypeCommon,
+    pub details: StructDetails,
+}
+
+impl From<StructType> for Type {
+    fn from(value: StructType) -> Self {
+        Type {
+            common: value.common,
+            details: TypeDetails::Struct(value.details),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct UnionDetails {}
+
+#[derive(Debug, Default)]
+pub struct UnionType {
+    pub common: TypeCommon,
+    pub details: UnionDetails,
+}
+
+impl From<UnionType> for Type {
+    fn from(value: UnionType) -> Self {
+        Type {
+            common: value.common,
+            details: TypeDetails::Union(value.details),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ImportedDetails {}
+
+#[derive(Debug, Default)]
+pub struct ImportedType {
+    pub common: TypeCommon,
+    pub details: ImportedDetails,
+}
+
+impl From<ImportedType> for Type {
+    fn from(value: ImportedType) -> Self {
+        Type {
+            common: value.common,
+            details: TypeDetails::Imported(value.details),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CommandHandle(pub NonZeroUsize);
 
-pub struct Command {
-    pub info: CommandInfo,
-}
-
-pub struct CommandInfo {
-    pub standard_name: String,
-    pub output_name: String,
-}
-
-#[derive(Default)]
-pub struct Features {
-    pub items: HashMap<FeatureHandle, Feature>,
-}
-impl Features {
-    pub fn get(&self, handle: FeatureHandle) -> Option<&Feature> {
-        self.items.get(&handle)
-    }
-}
+pub struct Command {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FeatureHandle(pub NonZeroUsize);
 
-pub struct Feature {
-    pub header: FeatureHeader,
-}
+#[derive(Debug)]
+pub struct Feature {}
 
-pub struct FeatureHeader {
-    pub standard_name: String,
-    pub output_name: String,
-}
-
-pub enum FeatureKind {
+pub enum FeatureDetails {
     Core(CoreFeature),
     Extension(Extension),
+    Platform(Platform),
 }
 
+#[derive(Debug, Default)]
 pub struct CoreFeature {}
 
+#[derive(Debug, Default)]
 pub struct Extension {}
+
+#[derive(Debug, Default)]
+pub struct Platform {}

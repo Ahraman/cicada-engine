@@ -2,6 +2,7 @@
 pub enum Error {
     Cmd(CmdError),
     Parse(xml::common::TextPosition, ParseError),
+    Trans(TransError),
     Emit(EmitError),
 
     Io(std::io::Error),
@@ -17,8 +18,9 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Cmd(error) => error.fmt(f),
-            Self::Emit(error) => error.fmt(f),
             Self::Parse(pos, error) => write!(f, "error at {pos}: {error}"),
+            Self::Trans(error) => error.fmt(f),
+            Self::Emit(error) => error.fmt(f),
 
             Self::Io(error) => error.fmt(f),
         }
@@ -30,6 +32,12 @@ impl std::error::Error for Error {}
 impl From<CmdError> for Error {
     fn from(value: CmdError) -> Self {
         Self::Cmd(value)
+    }
+}
+
+impl From<TransError> for Error {
+    fn from(value: TransError) -> Self {
+        Self::Trans(value)
     }
 }
 
@@ -66,16 +74,15 @@ impl std::error::Error for CmdError {}
 
 #[derive(Debug)]
 pub enum ParseError {
-    BadStart(String, String),
-    UnexpStart(String, String),
-    UnexpEnd(String, String),
-    DocEnd(String),
-    UnexpCont(String, String),
-    MissingAttrib(String, String),
-    BadAttrb(String, String, String),
-    BadDeprAttrib(String, String),
-    TypeNotFound(String),
-    BadType,
+    EmptyReg,
+    BadStart(String),
+    BadCont(String),
+    BadChild(String, String),
+    ReqAttrib(String, String),
+    BadAttrib(String, String, String),
+    UnreadAttrib(String, String, String),
+    BadEnd(String),
+    DocEnd,
 
     ParseBool(std::str::ParseBoolError),
 
@@ -85,37 +92,25 @@ pub enum ParseError {
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::BadStart(expected, element) => {
-                write!(f, "expected element <{expected}> but found <{element}>")
+            Self::EmptyReg => write!(f, "empty registry"),
+            Self::BadStart(element) => write!(f, "bad start <{element}>"),
+            Self::BadCont(content) => write!(f, "bad content '{content}'"),
+            Self::BadChild(element, child) => {
+                write!(f, "element <{element}> has invalid child <{child}>")
             }
-            Self::UnexpStart(element, child) => {
-                write!(f, "element <{element}> has unexpected child <{child}>")
+            Self::ReqAttrib(element, attrib) => {
+                write!(f, "element <{element}> missing attribute '{attrib}'")
             }
-            Self::UnexpEnd(element, end) => {
-                write!(f, "element <{element}> contains unexpected end </{end}>")
-            }
-            Self::DocEnd(element) => {
-                write!(f, "unexpected eof at element <{element}>")
-            }
-            Self::UnexpCont(element, content) => {
-                write!(f, "element <{element}> has unexpected content '{content}'")
-            }
-            Self::MissingAttrib(element, attrib) => {
-                write!(f, "element <{element}> missing required attrib '{attrib}'")
-            }
-            Self::BadAttrb(element, attrib, value) => write!(
+            Self::BadAttrib(element, attrib, value) => write!(
                 f,
                 "element <{element}> has bad attribute '{attrib}={value}'"
             ),
-            Self::BadDeprAttrib(attrib, value) => {
-                write!(f, "attrib '{attrib}' has invalid value '{value}'")
-            }
-            Self::TypeNotFound(ty) => {
-                write!(f, "type '{ty}' required but not found")
-            }
-            Self::BadType => {
-                write!(f, "type with no name")
-            }
+            Self::UnreadAttrib(element, attrib, value) => write!(
+                f,
+                "element <{element}> has unread attribute '{attrib}={value}"
+            ),
+            Self::BadEnd(element) => write!(f, "bad tag ending </{element}>"),
+            Self::DocEnd => write!(f, "document ended"),
 
             Self::ParseBool(error) => error.fmt(f),
 
@@ -139,19 +134,24 @@ impl From<xml::reader::Error> for ParseError {
 }
 
 #[derive(Debug)]
-pub enum EmitError {
-    BadStructMember(String, String),
+pub enum TransError {}
 
+impl std::fmt::Display for TransError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "")
+    }
+}
+
+impl std::error::Error for TransError {}
+
+#[derive(Debug)]
+pub enum EmitError {
     Syn(syn::Error),
 }
 
 impl std::fmt::Display for EmitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::BadStructMember(struct_name, member_name) => {
-                write!(f, "bad member in struct '{struct_name}->{member_name}'")
-            }
-
             Self::Syn(error) => error.fmt(f),
         }
     }
